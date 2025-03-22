@@ -1,1 +1,737 @@
+library(tidyverse)
+library(purrr) 
+library(dplyr)
+library(openxlsx)
+install.packages("xtable")
+library(openxlsx)
+library(xtable)
+library(readxl)
+library(lm)
+install.packages("stargazer")
+library(stargazer)
+
+setwd("C:/Users/luli_/OneDrive/Documentos/Maestría en Economía - UdeSA/Materias/Materias obligatorias/Econometría Avanzada/Trabajos Prácticos")
+
+
+# PUNTO  N° 1
+'Ejercicio 1:  crear 50 bases de datos distintas entre sí con 100 observaciones 
+cada una usando la siguiente información:
+
+- Las variables x1, x2 y x3 siguen una distribución uniforme
+- El término de error sigue una distibución normal con E(u)=0 y \sigma^{2}=1100
+- Una vez que tenga definidas las variables independientes y el error, defina y
+ teniendo en cuenta la ecuación 1 (modelo OLS).'
+
+'Entonces, hay que hacer una crear 50 bases de datos (variables explicativas) con
+toda la información del modelo'
+
+library(purrr)  # Para map()
+
+
+n <- 100   
+B <- 50   
+beta_0 <- 100
+beta_1 <- 3
+beta_2 <- 2
+beta_3 <- -1
+sigma2 <- 1100 
+
+# función para generar una base de datos con semillas específicas
+
+generar_base <- function(seed) {
+  set.seed(seed)  # vamos a fijar la semilla para que sea reproducible
+  
+  # generar variables independientes y error
+  x1 <- runif(n, 0, 200)
+  x2 <- runif(n, 0, 200)
+  x3 <- runif(n, 0, 200)
+  u <- rnorm(n, mean = 0, sd = sqrt(sigma2))
+  y <- beta_0 + beta_1 * x1 + beta_2 * x2 + beta_3 * x3 + u
+  
+
+  data.frame(x1 = x1, x2 = x2, x3 = x3, u = u, y = y)
+}
+
+# generamos 50 bases de datos con semillas del 1 al 50
+bases_datos <- map(1:B, generar_base)
+
+# evaluamos algunas bases de datos aleatoriamente para analizar cómo se crearon
+head(bases_datos[[50]])
+head(bases_datos[[1]])
+head(bases_datos[[14]])
+head(bases_datos[[33]])
+head(bases_datos[[21]])
+head(bases_datos[[47]])
+head(bases_datos[[20]])
+head(bases_datos[[39]])
+
+
+# armamos un excel con esto
+nombres_sheets <- paste0("Base_fic_", seq_along(bases_datos))
+
+# Guardar en un archivo Excel
+write_xlsx(setNames(bases_datos, nombres_sheets), "base_ficticia_1.xlsx")
+
+'Para tener estadísticas de los datos y de su distribución, nos gustaría computar
+estadísticas descriptivas'
+
+set.seed(125)  
+bases_aleatorias <- sample(bases_datos, 10)
+
+
+estat_ <- function(df) {
+  df %>%
+    summarise(
+      media_x1 = mean(x1), desviacion_x1 = sd(x1), max_x1 = max(x1), min_x1 = min(x1),
+      media_x2 = mean(x2), desviacion_x2 = sd(x2), max_x2 = max(x2), min_x2 = min(x2),
+      media_x3 = mean(x3), desviacion_x3 = sd(x3), max_x3 = max(x3), min_x3 = min(x3),
+      media_u = mean(u), desviacion_u = sd(u), max_u = max(u), min_u = min(u),
+      media_y = mean(y), desviacion_y = sd(y), max_y = max(y), min_y = min(y)
+    )
+}
+
+# aplicamos la función de estadísticas descriptivas a cada base de datos
+estat_dataframe <- map_df(bases_aleatorias, estat_)
+
+print(estat_dataframe)
+
+# exportamos a LaTeX
+
+latex_table <- xtable(estat_dataframe)
+print(latex_table, type = "latex")
+
+
+'Ejercicio 2: muestre la correlación entre las variables independientes para una de las bases de
+ datos creadas. Comente'
+'hacemos el código para una de las bases de datos y luego buscamos la forma de 
+replicarlo de forma eficiente para todas'
+
+base_ejemplo <- bases_datos[[29]]
+help(cor)
+
+correlaciones <- cor(base_ejemplo[, c("x1", "x2", "x3")])
+
+print(correlaciones)
+
+View(correlaciones)
+
+
+
+
+# entonces, armamos una lista donde va a haber data frames con la matriz de cor
+# usamos la función map para hacer esto 50 veces.
+correlaciones_lista <- map(bases_datos, ~ cor(.x[, c("x1", "x2", "x3")]))
+
+# pasamos a Latex la 29 que es la que mostraremos
+latex_table1 <- xtable(correlaciones_lista[[29]])
+print(latex_table1, type = "latex", digits = 4)
+
+View(correlaciones_lista[[6]])
+
+# mostramos la correlación de la primera base de datos como ejemplo
+print(correlaciones_lista[[1]], digits = 4)
+
+latex_table29 <- xtable(correlaciones_lista[[29]])
+print(latex_table29, type = "latex", digits = 4)
+
+latex_table39 <- xtable(correlaciones_lista[[39]])
+print(latex_table39, type = "latex", digits = 4)
+
+latex_table11 <- xtable(correlaciones_lista[[11]])
+print(latex_table11, type = "latex", digits = 4)
+
+
+# contrastamos
+View(correlaciones_lista[[1]])
+View(correlaciones_lista[[29]])
+View(correlaciones_lista[[39]])
+View(correlaciones_lista[[11]])
+library(writexl)
+library(purrr)
+
+# convertimos la matriz en un data frame
+correlaciones_df <- map(correlaciones_lista, as.data.frame)
+
+# la idea es ponerlo en un excel donde cada sheet sea para cada base de datos
+nombres_hojas <- paste0("Base_", seq_along(correlaciones_df))
+
+write_xlsx(setNames(correlaciones_df, nombres_hojas), "Matrices_correlaciones_xi.xlsx")
+
+
+
+'Ejercicio 3:  Estime β0, β1, β2 y β3 para las 50 muestras y guarde los datos
+en un Excel llamado primera_estimacion.xlsx. Tiene que quedarle
+una planilla con cuatro columnas y 50 estimaciones distintas.'
+
+
+# usamos map para hacerlo en cada base de datos
+help(map)
+estimaciones <- map(bases_datos, ~ {
+  modelo_ <- lm(y ~ x1 + x2 + x3, data = .x)
+  
+  # Extraer los coeficientes del modelo
+  coef(modelo_)
+})
+
+View(estimaciones)
+
+# pasamos a convertir la lista de estimaciones en un dataframe ÚNICO 
+estimaciones_df <- map_df(estimaciones, ~ data.frame(t(.x)))
+
+View(estimaciones_df)
+
+# renombramos las columnas para que coincidan con los coeficientes
+colnames(estimaciones_df) <- c("Beta0", "Beta1", "Beta2", "Beta3")
+
+# miramos los primeros resultados
+head(estimaciones_df)
+
+# Exportamos las estimaciones a un archivo Excel
+write.xlsx(estimaciones_df, "primera_estimacion.xlsx", rowNames = TRUE)
+
+# (le dejamos el numero de la columna para que se sepa de qué df es)
+
+# probamos con algunos data frames
+modelo_1 <- lm(y ~ x1 + x2 + x3, data = bases_datos[[1]])
+coef(modelo_1)
+
+modelo_2 <- lm(y ~ x1 + x2 + x3, data = bases_datos[[2]])
+coef(modelo_2)
+
+modelo_3 <- lm(y ~ x1 + x2 + x3, data = bases_datos[[3]])
+coef(modelo_3)
+
+modelo_4 <- lm(y ~ x1 + x2 + x3, data = bases_datos[[4]])
+coef(modelo_4)
+
+modelo_5 <- lm(y ~ x1 + x2 + x3, data = bases_datos[[5]])
+coef(modelo_5)
+
+modelo_34 <- lm(y ~ x1 + x2 + x3, data = bases_datos[[34]])
+coef(modelo_34)
+
+library(stargazer)
+
+stargazer(modelo_1, modelo_2, modelo_3, modelo_4,
+          type = "latex", 
+          keep.stat = c("n", "rsq"))
+          
+'Ejercicio 4: cargar la base primera_estimacion.xlsx a R y
+hacer dos gráficos: uno de \hat{\beta}_1 contra \hat{\beta}_2, y otro de \hat{\beta}_1
+contra \hat{\beta}_3. 
+Comente el resultado. ¿Son buenas las estimaciones?'
+
+
+# importamos la base de excel
+df_est_ols <-  read.xlsx("C:/Users/luli_/OneDrive/Documentos/Maestría en Economía - UdeSA/Materias/Materias obligatorias/Econometría Avanzada/Trabajos Prácticos/Primer Trabajo Práctico/primera_estimacion.xlsx")
+View(df_est_ols)
+
+# eliminamos la primera columna que son los numeros de cada base de datos
+df_est_ols <- df_est_ols %>% select(-1)
+View(df_est_ols)
+
+
+# b1 con b2
+modelo_b1b2 <- lm(Beta1 ~ Beta2, data = df_est_ols)
+coef(modelo_b1b2)
+summary(modelo_b1b2)
+
+
+grafico1 <- ggplot(df_est_ols, aes(x = Beta2, y = Beta1)) +
+  geom_point(color = "darkred", size = 3, alpha = 0.7) +  # Puntos con estilo
+  geom_smooth(method = "lm", se = TRUE, color = "blue", fill = "lightblue", alpha = 0.3) +  
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[2]),  
+    subtitle = "Con línea de regresión y su intervalo de confianza",
+    x = expression("Beta"[2]),  
+    y = expression("Beta"[1])  
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, family = "Helvetica", size = 16),  
+    plot.subtitle = element_text(hjust = 0.5, family = "Helvetica", size = 14),  
+    axis.title = element_text(face = "bold", family = "Helvetica"), 
+    axis.text = element_text(family = "Helvetica"),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"),  
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico1.png", width = 9, height = 6, dpi = 300)
+
+
+#b1 con b3
+
+modelo_b1b3 <- lm(Beta1 ~ Beta3, data = df_est_ols)
+coef(modelo_b1b3)
+summary(modelo_b1b3)
+
+
+grafico2 <- ggplot(df_est_ols, aes(x = Beta3, y = Beta1)) +
+  geom_point(color = "orange", size = 3, alpha = 0.7) +  
+  geom_smooth(method = "lm", se = TRUE, color = "darkorange", fill = "salmon", alpha = 0.3) +  
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[3]),  
+    subtitle = "Con línea de regresión y su intervalo de confianza",
+    x = expression("Beta"[3]),  
+    y = expression("Beta"[1])  
+  ) +
+  theme_minimal(base_size = 14) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, family = "Helvetica", size = 16), 
+    plot.subtitle = element_text(hjust = 0.5, family = "Helvetica", size = 14), 
+    axis.title = element_text(face = "bold", family = "Helvetica"),  
+    axis.text = element_text(family = "Helvetica"),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"),  
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico2.png", width = 9, height = 6, dpi = 300)
+
+
+### extras ###################################################################
+
+
+# b1 con b2
+modelo_b2b1 <- lm(Beta2 ~ Beta1, data = df_est_ols)
+coef(modelo_b2b1)
+summary(modelo_b2b1)
+
+
+grafico_1 <- ggplot(df_est_ols, aes(x = Beta1, y = Beta2)) +
+  geom_point(color = "darkred", size = 3, alpha = 0.7) +  
+  geom_smooth(method = "lm", se = TRUE, color = "blue", fill = "lightblue", alpha = 0.3) +  
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[2]), 
+    subtitle = "Con línea de regresión y su intervalo de confianza",
+    x = expression("Beta"[1]),  
+    y = expression("Beta"[2]) 
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, family = "Helvetica", size = 16), 
+    plot.subtitle = element_text(hjust = 0.5, family = "Helvetica", size = 14),  
+    axis.title = element_text(face = "bold", family = "Helvetica"),  
+    axis.text = element_text(family = "Helvetica"),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"),  
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico_1.png", width = 8, height = 6, dpi = 300)
+
+
+
+# b1 con b3
+modelo_b3b1 <- lm(Beta3 ~ Beta1, data = df_est_ols)
+coef(modelo_b3b1)
+summary(modelo_b3b1)
+
+
+grafico_2 <- ggplot(df_est_ols, aes(x = Beta1, y = Beta3)) +
+  geom_point(color = "darkred", size = 3, alpha = 0.7) +  # Puntos con estilo
+  geom_smooth(method = "lm", se = TRUE, color = "black", fill = "lightblue", alpha = 0.3) + 
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[3]),  
+    subtitle = "Con línea de regresión y su intervalo de confianza",
+    x = expression("Beta"[1]),  # Eje X con LaTeX
+    y = expression("Beta"[3])  # Eje Y con LaTeX
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, family = "Helvetica", size = 16),  
+    plot.subtitle = element_text(hjust = 0.5, family = "Helvetica", size = 14),  
+    axis.title = element_text(face = "bold", family = "Helvetica"),  
+    axis.text = element_text(family = "Helvetica"),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"),  
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico_2.png", width = 8, height = 6, dpi = 300)
+
+# b2 y b3
+
+modelo_b2b3 <- lm(Beta2 ~ Beta3, data = df_est_ols)
+coef(modelo_b2b3)
+summary(modelo_b2b3)
+
+
+
+grafico_3 <- ggplot(df_est_ols, aes(x = Beta3, y = Beta2)) +
+  geom_point(color = "orange", size = 3, alpha = 0.7) +  # Puntos con estilo
+  geom_smooth(method = "lm", se = TRUE, color = "darkorange", fill = "salmon", alpha = 0.3) +
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[2] ~ " y " ~ hat(beta)[3]),  
+    subtitle = "Con línea de regresión y su intervalo de confianza",
+    x = expression("Beta"[3]),  
+    y = expression("Beta"[2])  
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, family = "Helvetica", size = 16),  
+    plot.subtitle = element_text(hjust = 0.5, family = "Helvetica", size = 14),  
+    axis.title = element_text(face = "bold", family = "Helvetica"),  
+    axis.text = element_text(family = "Helvetica"), 
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"), 
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico_3.png", width = 8, height = 6, dpi = 300)
+
+
+################## medias
+
+mean(df_est_ols$Beta1)
+
+mean(df_est_ols$Beta2)
+
+mean(df_est_ols$Beta3)
+
+
+
+
+
+' Ejercicio 5: El siguiente código sirve para lograr que x2 esté altamente correlacionada con x1:'
+library(purrr)
+library(dplyr)
+library(xtable)
+library(openxlsx)
+
+n <- 100  
+B <- 50   
+
+# lista de semillas del 1 al 50, igual que antes
+semillas <- 1:B  
+
+# Función para generar bases de datos con x1 y x2 altamente correlacionadas!
+generar_base_cor <- function(seed) {
+  set.seed(seed)  # fijamos la semilla para cada base
+  
+  # x1
+  x1 <- runif(n, 0, 200)
+  
+  # x2 altamente correlacionado con x1
+  set.seed(seed + 100)  # Cambiar ligeramente la semilla para evitar dependencia directa
+  x2 <- x1 * 0.98 + rnorm(n, mean = 0, sd = 5)  # Introducir una pequeña variabilidad
+  
+  # Generar x3 y el término de error
+  set.seed(seed + 200)
+  x3 <- runif(n, 0, 200)
+  
+  set.seed(seed + 300)
+  u <- rnorm(n, mean = 0, sd = sqrt(1100))
+  
+  # Generar la variable dependiente
+  y <- 100 + 3 * x1 + 2 * x2 - 1 * x3 + u
+  
+  # Devolver un data frame
+  data.frame(x1 = x1, x2 = x2, x3 = x3, u = u, y = y)
+}
+
+# Generamos las 50 bases de datos usando las semillas originales
+bases_datos_cor <- map(semillas, generar_base_cor)
+
+View(bases_datos_cor[[1]])
+
+
+library(writexl)
+
+# guardamos en excel para ponerlo en el github
+
+# Crear una lista con nombres de hojas
+nombres_hojas <- paste0("Base_corr_", seq_along(bases_datos_cor))
+
+# Guardar en un archivo Excel con múltiples sheets
+write_xlsx(setNames(bases_datos_cor, nombres_hojas), "base_ficticia_2.xlsx")
+
+
+'Ejercicio 6 y 7'
+
+# Guardamos estimaciones de los coeficientes!
+estimaciones_cor <- map(bases_datos_cor, ~ {
+  modelo_corr <- lm(y ~ x1 + x2 + x3, data = .x)
+  coef(modelo_corr)
+})
+
+# Convertir en data frame
+estimaciones_df_cor <- map_df(estimaciones_cor, ~ data.frame(t(.x)))
+colnames(estimaciones_df_cor) <- c("Beta0", "Beta1", "Beta2", "Beta3")
+
+View(estimaciones_df_cor)
+
+estimaciones_df_cor[[40]]
+
+write.xlsx(estimaciones_df_cor, "segunda_estimacion.xlsx", rowNames = TRUE)
+
+
+
+# importamos la base de excel
+df_est_ols2 <-  read.xlsx("C:/Users/luli_/OneDrive/Documentos/Maestría en Economía - UdeSA/Materias/Materias obligatorias/Econometría Avanzada/Trabajos Prácticos/Primer Trabajo Práctico/segunda_estimacion.xlsx")
+View(df_est_ols2)
+any(names(df_est_ols2) == "")
+
+df_est_ols2 <- df_est_ols2 %>% select(-1)
+
+
+# b1 con b2
+modelo_b1b2_ <- lm(Beta1 ~ Beta2, data = df_est_ols2)
+
+coef(modelo_b1b2_)
+summary(modelo_b1b2_)
+
+mean(Beta_1)
+
+grafico1_corr <- ggplot(df_est_ols2, aes(x = Beta2, y = Beta1)) +
+  geom_point(color = "#1F4E79", size = 3, alpha = 0.7) +  
+  geom_smooth(method = "lm", se = TRUE, color = "#4D4D4D", fill = "#A6C8E4", alpha = 0.3) +  # Línea gris con IC azul claro
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[2]),  
+    subtitle = "Con línea de regresión e intervalo de confianza",
+    x = expression("Beta"[2]),  
+    y = expression("Beta"[1])  
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    text = element_text(family = "Times"),  
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),  
+    plot.subtitle = element_text(hjust = 0.5, size = 14),  
+    axis.title = element_text(face = "bold"),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"),  
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico1_corr.png", width = 9, height = 6, dpi = 300)
+
+# qué tanto se parecen a los parámetros?
+
+mean(df_est_ols2$Beta1)
+
+mean(df_est_ols2$Beta2)
+
+mean(df_est_ols2$Beta3)
+
+
+
+
+mean(df_est_ols$Beta1)
+
+mean(df_est_ols$Beta2)
+
+mean(df_est_ols$Beta3)
+
+
+beta_0 <- 100
+beta_1 <- 3
+beta_2 <- 2
+beta_3 <- -1
+
+dif_1_A <- mean(df_est_ols$Beta1) - beta_1
+dif_1_B <- mean(df_est_ols2$Beta1) - beta_1
+
+dif_2_A <- mean(df_est_ols$Beta2) - beta_2
+dif_2_B <- mean(df_est_ols2$Beta2) - beta_2
+
+dif_3_A <- mean(df_est_ols$Beta3) - beta_3
+dif_3_B <- mean(df_est_ols2$Beta3) - beta_3
+
+print(dif_1_A)
+print(dif_1_B)
+
+print(dif_2_A)
+print(dif_2_B)
+
+print(dif_3_A)
+print(dif_3_B)
+
+
+
+# PUNTO 2: se repite la primera parte del uno #################################
+
+
+n <- 100   
+B <- 50   
+beta_0 <- 100
+beta_1 <- 3
+beta_2 <- 2
+beta_3 <- -1
+sigma2 <- 1100 
+
+# función para generar una base de datos con semillas específicas
+
+generar_base <- function(seed) {
+  set.seed(seed)  # vamos a fijar la semilla para que sea reproducible
+  
+  # generar variables independientes y error
+  x1 <- runif(n, 0, 200)
+  x2 <- runif(n, 0, 200)
+  x3 <- runif(n, 0, 200)
+  u <- rnorm(n, mean = 0, sd = sqrt(sigma2))
+  y <- beta_0 + beta_1 * x1 + beta_2 * x2 + beta_3 * x3 + u
+  
+  
+  data.frame(x1 = x1, x2 = x2, x3 = x3, u = u, y = y)
+}
+
+# generamos 50 bases de datos con semillas del 1 al 50
+bases_datos <- map(1:B, generar_base)
+
+# evaluamos algunas bases de datos aleatoriamente para analizar cómo se crearon
+head(bases_datos[[50]])
+head(bases_datos[[1]])
+head(bases_datos[[14]])
+head(bases_datos[[33]])
+head(bases_datos[[21]])
+head(bases_datos[[47]])
+head(bases_datos[[20]])
+head(bases_datos[[39]])
+
+
+View(bases_datos)
+
+
+estimaciones_vo <- map(bases_datos, ~ {
+  modelo_vo <- lm(y ~ x1  + x3, data = .x)
+  
+  # Extraer los coeficientes del modelo
+  coef(modelo_vo)
+})
+
+View(estimaciones_vo)
+
+# pasamos a convertir la lista de estimaciones en un dataframe ÚNICO 
+estimaciones_vo_df <- map_df(estimaciones_vo, ~ data.frame(t(.x)))
+
+View(estimaciones_vo_df)
+
+# Renombramos las columnas para que coincidan con los coeficientes
+colnames(estimaciones_vo_df) <- c("Beta0", "Beta1", "Beta3")
+
+# miramos los primeros resultados
+head(estimaciones_vo_df)
+
+# Exportar las estimaciones a un archivo Excel
+write.xlsx(estimaciones_vo_df, "tercera_estimacion.xlsx", rowNames = TRUE)
+
+# (le dejamos el numero de la columna para que se sepa de qué df es)
+
+# probamos con algunos data frames
+modelo_1_vo <- lm(y ~ x1  + x3, data = bases_datos[[4]])
+coef(modelo_1_vo)
+
+
+modelo_1_vo_ <- lm(Beta1 ~ Beta3, data = estimaciones_vo_df)
+coef(modelo_1_vo_)
+summary(modelo_1_vo_)
+
+
+
+modelo_1_vo_ <- lm(Beta1 ~ Beta3, data = estimaciones_vo_df)
+coef(modelo_1_vo_)
+summary(modelo_1_vo_)
+
+
+grafico_sesgo <- ggplot(estimaciones_vo_df, aes(x = Beta3, y = Beta1)) +
+  geom_point(color = "orange", size = 3, alpha = 0.7) +  # Puntos con estilo
+  geom_smooth(method = "lm", se = TRUE, color = "darkorange", fill = "salmon", alpha = 0.3) + 
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[3]),
+    subtitle = "Con línea de regresión y su intervalo de confianza, cuando se omite una variable",
+    x = expression("Beta"[3]),  
+    y = expression("Beta"[1])  
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, family = "Helvetica", size = 16),  
+    plot.subtitle = element_text(hjust = 0.5, family = "Helvetica", size = 14),  
+    axis.title = element_text(face = "bold", family = "Helvetica"),  
+    axis.text = element_text(family = "Helvetica"), 
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"), 
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico_sesgo.png", width = 9, height = 6, dpi = 300)
+
+# para el inciso 2, donde x1 está altamente correlacionada con x2
+
+
+View(bases_datos_cor[[1]])
+
+
+# guardamos estimaciones de los coeficientes con el modelo que omite x2
+estimaciones_cor_vo <- map(bases_datos_cor, ~ {
+  modelo_corr_vo <- lm(y ~ x1 + x3, data = .x)
+  coef(modelo_corr_vo)
+})
+
+View(estimaciones_cor_vo_df[[3]])
+# convertimos en data frame
+estimaciones_cor_vo_df <- map_df(estimaciones_cor_vo, ~ data.frame(t(.x)))
+colnames(estimaciones_cor_vo_df) <- c("Beta0", "Beta1", "Beta3")
+
+View(estimaciones_cor_vo_df)
+
+estimaciones_df_cor[[40]]
+
+write.xlsx(estimaciones_cor_vo_df, "cuarta_estimacion.xlsx", rowNames = TRUE)
+
+
+
+# importamos la base de excel
+df_est_ols_vo2 <-  read.xlsx("C:/Users/luli_/OneDrive/Documentos/Maestría en Economía - UdeSA/Materias/Materias obligatorias/Econometría Avanzada/Trabajos Prácticos/Primer Trabajo Práctico/cuarta_estimacion.xlsx")
+View(df_est_ols_vo2)
+any(names(df_est_ols_vo2) == "")
+
+df_est_ols_vo2 <- df_est_ols_vo2 %>% select(-1)
+
+
+# b1 con b3
+modelo_b1b3_vo <- lm(Beta1 ~ Beta3, data = df_est_ols_vo2)
+
+coef(modelo_b1b3_vo)
+summary(modelo_b1b3_vo)
+
+mean(Beta_1)
+
+grafico1_corr_vo <- ggplot(modelo_b1b3_vo, aes(x = Beta3, y = Beta1)) +
+  geom_point(color = "#1F4E79", size = 3, alpha = 0.7) +  # Puntos azul oscuro
+  geom_smooth(method = "lm", se = TRUE, color = "#4D4D4D", fill = "#A6C8E4", alpha = 0.3) +  
+  labs(
+    title = expression("Relación entre " ~ hat(beta)[1] ~ " y " ~ hat(beta)[3]),  
+    subtitle = "Con línea de regresión e intervalo de confianza, cuando se omite una variable",
+    x = expression("Beta"[3]),  
+    y = expression("Beta"[1])  
+  ) +
+  theme_minimal(base_size = 14) +  
+  theme(
+    text = element_text(family = "Times"),  
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),  
+    plot.subtitle = element_text(hjust = 0.5, size = 14),  
+    axis.title = element_text(face = "bold"),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_rect(fill = "white"),  
+    plot.background = element_rect(fill = "white")  
+  )
+
+
+
+ggsave("grafico1_corr_vo.png", width = 9, height = 6, dpi = 300)
 
