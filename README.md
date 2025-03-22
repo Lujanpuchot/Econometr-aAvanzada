@@ -15,4 +15,4 @@ En este repositorio se encontrara
 
 7 - Estimaciones del modelo SESGADO para cada base de datos, donde las filas refieren a la base de datos, las columnas al parámetro estimado ("7- tercera_estimacion 2.1.xlsx")
 
-8 - Estimaciones del modelo SESGADO para cada base de datos, donde las filas refieren a la base de datos, las columnas al parámetro estimado. CASO DONDE X1 SE RELACIONA ALTAMENTE CON X2 ("8- cuarta_estimacion 2.1.xlsx")
+8 - Estimaciones del modelo SESGADO para cada base de datos, donde las filas refieren a la base de datos, las columnas al parámetro estimado. CASO DONDE X1 SE RELACIONA ALTAMENTE CON X2 ("8- cuarta_estimacion 2.2.xlsx")
